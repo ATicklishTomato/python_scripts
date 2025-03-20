@@ -1,55 +1,65 @@
 import os
-from moviepy import VideoFileClip
-import time
+import struct
+import subprocess
+import sys
 
+
+def extract_moi_datetime(moi_file):
+    """Extracts the recording date and time from a .moi file."""
+    try:
+        print("Extracting moi file: ", moi_file)
+        with open(moi_file, "rb") as f:
+            f.seek(6)  # Start reading at hex offset 06
+            raw_data = f.read(6)  # Read 6 bytes for date and time
+
+            # Unpack the binary data (Year: 2 bytes, Month: 1 byte, Day: 1 byte, Hour: 1 byte, Minute: 1 byte)
+            year, month, day, hour, minute = struct.unpack(">HBBBB", raw_data)
+
+            # return datetime(year, month, day, hour, minute)
+            return f"{year}-{month}-{day}_{hour}-{minute}"
+    except Exception as e:
+        print(f"Error reading {moi_file}: {e}")
+        return None
 
 if __name__ == "__main__":
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+        from moviepy import VideoFileClip
+    except ImportError as e:
+        print("Missing dependencies. Installing required packages...")
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "moviepy", "tk"])
+        import tkinter as tk
+        from tkinter import filedialog
+        from moviepy import VideoFileClip
+
     # Get file names from folder
-    folder = input("Enter folder path: ")
-    new_folder = input("Enter path for new mp4 files (leave blank for same folder): ")
-    # Validate folder path
-    if folder == "":
-        folder = "./"
-    if folder[-1] != "/":
-        folder += "/"
+    root = tk.Tk()
+    root.withdraw()
 
-    if new_folder == "":
-        new_folder = folder
-    if new_folder[-1] != "/":
-        new_folder += "/"
-
+    folder = filedialog.askdirectory(mustexist=True) + "/"
+    files = os.listdir(folder)
+    new_folder = folder + "mp4/"
     if not os.path.exists(new_folder):
         os.makedirs(new_folder)
-
-    # Ask user if they want to delete .MOD and .MOI files after finish
-    delete_mod_after_finish = input("Delete .MOD files after finish? (y/n): ") == "y"
-    delete_moi_files = input("Delete .MOI files? (y/n): ") == "y"
-    files = os.listdir(folder)
-
-    # Delete .MOI files
-    try:
-        if delete_moi_files:
-            [os.remove(folder + file) for file in files if file.upper()[-4:] == ".MOI"]
-    except Exception as e:
-        print(f"Error deleting .MOI files: {e}")
 
     # Filter .MOD files
     files = [file for file in files if file.upper()[-4:] == ".MOD"]
 
     for file in files:
         try:
-            time_of_video = os.path.getmtime(folder + file)
-            time_string = time.strftime("%Y%m%d_%H%M%S", time.gmtime(time_of_video))
+            time_string = extract_moi_datetime(folder + file[:-4] + ".MOI")
             new_filename = new_folder + "video_" + time_string + ".mp4"
+
+            if os.path.exists(new_filename):
+                # count number of files with same time string
+                new_files = [f for f in os.listdir(new_folder) if f.startswith("video_" + time_string)]
+
+                # append number of files to new file name to avoid overwriting
+                new_filename = new_folder + "video_" + time_string + "_" + str(len(new_files)) + ".mp4"
 
             clip = VideoFileClip(folder + file)
             clip.write_videofile(new_filename, codec="mpeg4", bitrate="5M")
             clip.close()
         except Exception as e:
             print(f"Error converting {file}: {e}")
-
-    try:
-        if delete_mod_after_finish:
-            [os.remove(folder + file) for file in files]
-    except Exception as e:
-        print(f"Error deleting .MOD files: {e}")
